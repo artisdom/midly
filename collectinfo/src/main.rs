@@ -71,7 +71,18 @@ fn bytes_per_event(path: &Path) -> Result<(), Box<dyn Error>> {
         .map(|track| {
             let track = track?;
             let track_bytes = track.unread().len();
-            let track_events = track.count();
+            let track_events = track.clone().count();
+
+            // Find track name
+            let track_name = track.filter(|event| true)
+                .find_map(|event| {
+                    if let midly::TrackEventKind::Meta(midly::MetaMessage::TrackName(name)) = event.unwrap().kind {
+                        Some(String::from_utf8_lossy(name).into_owned())
+                    } else {
+                        None
+                    }
+                });
+
             total_bytes += track_bytes;
             total_events += track_events;
             let bpe = track_bytes as f64 / track_events as f64;
@@ -81,7 +92,7 @@ fn bytes_per_event(path: &Path) -> Result<(), Box<dyn Error>> {
             if bpe > max_bpe {
                 max_bpe = bpe;
             }
-            Ok((track_bytes, track_events))
+            Ok((track_bytes, track_events, track_name))
         })
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     eprintln!(
@@ -90,10 +101,11 @@ fn bytes_per_event(path: &Path) -> Result<(), Box<dyn Error>> {
         total_bytes as f64 / total_events as f64,
         max_bpe,
     );
-    for (idx, &(bytes, events)) in bpe.iter().enumerate() {
+    for (idx, &(bytes, events, ref name)) in bpe.iter().enumerate() {
         eprintln!(
-            "        track {}: {} bytes/event ({} bytes in {} events)",
+            "        track {}{}: {} bytes/event ({} bytes in {} events)",
             idx,
+            name.as_ref().map(|n| format!(" \"{}\"", n)).unwrap_or_default(),
             bytes as f64 / events as f64,
             bytes,
             events,
